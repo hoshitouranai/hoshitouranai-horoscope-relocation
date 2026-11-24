@@ -1,0 +1,11 @@
+.hoshitouranai-wordmark {
+  display: inline-flex;
+  align-items: center;
+  gap: .5rem;
+}
+.hoshitouranai-wordmark > img {
+  width: 1.625rem;
+  height: 1.625rem;
+  flex: none;
+  object-fit: contain;
+}
