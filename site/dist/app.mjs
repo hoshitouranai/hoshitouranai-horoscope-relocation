@@ -1,5 +1,7 @@
+import {zodiacOutlineData} from './zodiac-outlines.mjs';
+import {createYearlyEphemerisLoader} from './yearly-ephemeris.mjs';
 import {
-  WORLD_CITIES, ZODIAC_SIGNS, zodiacGlyphStyle, PLANET_GLYPHS, loadSampledEphemeris, loadHistoricalTimezones,
+  WORLD_CITIES, ZODIAC_SIGNS, zodiacGlyphStyle, PLANET_GLYPHS, loadHistoricalTimezones, civilTimeToUtc, resolveLocation,
   relocationChart, chartSect, pairList,
 } from './engine/src/index.mjs';
 import { RETROGRADE_COLOR, RETROGRADE_MARK } from './engine/src/retrograde-display.mjs';
@@ -67,19 +69,13 @@ async function withRetrograde(positions, utcMs, ids) {
 const asteroidAt = utcMs => withRetrograde(asteroidPositions, utcMs);
 const lilithAt = utcMs => withRetrograde(lilithPositions, utcMs, ['meanLilith', 'trueLilith']);
 async function readEngineData(url) {
-  if (url.pathname.endsWith('/ephemeris_1900_1999_3h.bin')) {
-    const parts = await Promise.all([0, 1].map(index => binary(url.href + '.' + index)));
-    const bytes = new Uint8Array(parts[0].byteLength + parts[1].byteLength);
-    bytes.set(new Uint8Array(parts[0]));
-    bytes.set(new Uint8Array(parts[1]), parts[0].byteLength);
-    return bytes.buffer;
-  }
   if (!url.pathname.endsWith('.json')) return binary(url.href);
   const response = await fetch(url);
   if (!response.ok) throw new Error('天文暦のデータを読み込めません');
   return response.json();
 }
-const ready = Promise.all([loadSampledEphemeris(undefined, readEngineData), loadHistoricalTimezones()]);
+const ready = loadHistoricalTimezones();
+const ephemerisFor = createYearlyEphemerisLoader(readEngineData);
 let generation = 0;
 let pngUrl;
 let pngFile;
@@ -150,7 +146,20 @@ function signCell(row, degrees, retrograde = false) {
     return;
   }
   const sign = zodiacGlyphStyle(value.sign);
-  const badge = glyph(sign.glyph, 'sign-glyph');
+  const badge = glyph('', 'sign-glyph');
+  const [outline, left, bottom, right, top] = zodiacOutlineData[value.sign];
+  const ns = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('viewBox', `${left} ${-top} ${right-left} ${top-bottom}`);
+  svg.setAttribute('width', '1em');
+  svg.setAttribute('height', '1em');
+  svg.setAttribute('aria-hidden', 'true');
+  const path = document.createElementNS(ns, 'path');
+  path.setAttribute('d', outline);
+  path.setAttribute('transform', 'scale(1 -1)');
+  path.setAttribute('fill', 'currentColor');
+  svg.append(path);
+  badge.append(svg);
   badge.style.setProperty('--sign-color', sign.color);
   const degree = document.createElement('span');
   degree.className = 'degree';
@@ -255,7 +264,8 @@ async function update() {
   $('results').hidden = true;
   $('status').textContent = '計算中…';
   try {
-    const [e, t] = await ready;
+    const t = await ready;
+    if (request !== generation) return;
     if (!$('origin-zone').options.length) {
       for (const zone of Object.keys(t.zones).sort()) $('origin-zone').add(new Option(zone, zone));
       $('origin-zone').value = 'Asia/Tokyo';
@@ -267,26 +277,30 @@ async function update() {
       date: normalizeChartDate($('date').value), time: unknown ? '12:00' : $('time').value,
       birthLocation: location('origin'), destination: location('target'),
     };
-    let result = relocationChart(e, t, input);
-    if (request !== generation) return;
-    $('ambiguity').hidden = result.status !== 'ambiguous';
-    if (result.status === 'ambiguous') {
+    const origin = resolveLocation(t, input.birthLocation);
+    const conversion = civilTimeToUtc(t, {date: input.date, time: input.time, timeZone: origin.timeZone});
+    $('ambiguity').hidden = conversion.status !== 'ambiguous';
+    let utcMs = conversion.utcMs;
+    if (conversion.status === 'ambiguous') {
       const chosen = Number($('candidate').value);
       $('candidate').replaceChildren(new Option('時刻を選択', ''));
-      for (const {utcMs} of result.candidates) {
-        $('candidate').add(new Option(new Date(utcMs).toISOString(), String(utcMs)));
+      for (const {utcMs: candidate} of conversion.candidates) {
+        $('candidate').add(new Option(new Date(candidate).toISOString(), String(candidate)));
       }
-      if (!result.candidates.some(candidate => candidate.utcMs === chosen)) {
+      if (!conversion.candidates.some(candidate => candidate.utcMs === chosen)) {
         $('status').textContent = '出生時刻に対応するUTCが2つあります。候補を選んでください。';
         return;
       }
       $('candidate').value = String(chosen);
-      result = relocationChart(e, t, { ...input, birthUtcMs: chosen });
+      utcMs = chosen;
     }
-    if (result.status !== 'ok') {
+    if (!Number.isSafeInteger(utcMs)) {
       $('status').textContent = '入力された現地時刻を確定できません。日付と時刻を確認してください。';
       return;
     }
+    const e = await ephemerisFor(utcMs);
+    if (request !== generation) return;
+    const result = relocationChart(e, t, {...input, birthUtcMs: utcMs});
     const selection = new FormData($('controls')).getAll('point').filter(id =>
       !reference || !['vertex','antiVertex','fortune'].includes(id));
     const charts = [result.natal, result.relocated].map(chart => selectHouses(chart, method));

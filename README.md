@@ -1,6 +1,6 @@
 # HOSHITOURANAI Relocation Chart
 
-Release source for v1.0.0. Compare natal and relocated charts, including
+Release source with annual ephemeris loading. Compare natal and relocated charts, including
 house cusps, angles and selected celestial points. The browser computes
 the comparison and exports a 1920 × 1080 PNG.
 
@@ -8,7 +8,7 @@ the comparison and exports a 1920 × 1080 PNG.
 
 Use Python 3.12 or later. Keep the three input archives inside `inputs/`
 as supplied. The build verifies the input archive hashes and the list
-and SHA-256 of all 466 static output files.
+and SHA-256 of all 1,071 static output files.
 
 ```sh
 python3 restore.py restored
@@ -28,6 +28,8 @@ node restored/tests/relocation-preview.mjs restored/dist
 The checks cover charts, time and location inputs, aspect modes,
 retrograde marks, house systems, house cusps and PNG encoding. Device
 behavior for the simulated browser controls requires separate testing.
+
+Run `node restored/check-yearly.mjs` to compare annual data with the original segments.
 
 ## Source and notices
 

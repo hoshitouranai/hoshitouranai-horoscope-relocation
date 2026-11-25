@@ -60,6 +60,7 @@ with tempfile.TemporaryDirectory() as directory:
     for year in range(1900, 2101):
         name = f"lilith-{year}.bin"
         copy2(temporary / "lilith" / "data" / name, dist / "lilith" / name)
+    subprocess.run([sys.executable, str(target / "research/build-yearly.py"), str(dist)], check=True)
 expected = verify(target, root / "DIST_SHA256SUMS.txt")
 actual = {path.relative_to(target).as_posix() for path in dist.rglob("*") if path.is_file()}
 if actual != set(expected):
